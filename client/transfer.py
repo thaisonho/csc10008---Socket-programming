@@ -1,7 +1,6 @@
 import os
 import socket
 
-
 class FileTransferClient:
     def __init__(self, host='localhost', port=5000):
         self.host = host

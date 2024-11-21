@@ -120,10 +120,11 @@ class FileTransferServer:
                                     if not data:
                                         break
                                     client_socket.sendall(data)
-                            self.send_message(client_socket, "SUCCESS")
+                            # Đảm bảo gửi SUCCESS sau khi gửi xong dữ liệu
+                            self.send_message(client_socket, "SUCCESS\n")
                             print(f"Tải xuống tệp tin: {filename} thành công đến {address}")
                         else:
-                            self.send_message(client_socket, "ERROR|Không nhận được yêu cầu READY")
+                            self.send_message(client_socket, "ERROR|Client không sẵn sàng")
                     else:
                         self.send_message(client_socket, "FILE_NOT_FOUND")
 

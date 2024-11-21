@@ -1,27 +1,20 @@
+# client.py
 import tkinter as tk
-from tkinter import messagebox
-from client import gui, transfer
+from tkinter import ttk, filedialog, messagebox
+import socket
+import os
+import threading
+from datetime import datetime
+from client import gui
 
 def main():
     root = tk.Tk()
     root.withdraw()  # Ẩn cửa sổ chính tạm thời
-
-    # Khởi tạo đối tượng client
-    client = transfer.FileTransferClient()
-
-    # Tạo và hiển thị cửa sổ đăng nhập
-    login_window = tk.Toplevel(root)
-    gui.LoginWindow(login_window, client, lambda: show_main_gui(root, client))
-
-    root.mainloop()
-
-def show_main_gui(root, client):
-    # Đóng cửa sổ đăng nhập
-    root.deiconify()  # Hiện cửa sổ chính
-    app = gui.FileTransferGUI(root, client)
+    app = gui.FileTransferGUI(root)
+    root.after(0, app.connect_and_login)
     root.protocol("WM_DELETE_WINDOW", lambda: (app.client.close(), root.destroy()))
-    # Hiển thị giao diện chính
-    app.setup_gui()
+    root.deiconify()  # Hiện cửa sổ chính sau khi thiết lập
+    root.mainloop()
 
 if __name__ == "__main__":
     main()

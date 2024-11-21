@@ -40,22 +40,22 @@ class LoginWindow:
         def login_thread():
             try:
                 if self.client.login(username, password):
-                    self.on_success()  # Gọi hàm on_success sau khi đăng nhập thành công
+                    messagebox.showinfo("Thành công", "Đăng nhập thành công")
                     self.master.destroy()
-                else:
-                    messagebox.showerror("Lỗi Đăng Nhập", "Tên đăng nhập hoặc mật khẩu không đúng")
+                    self.on_success()
             except Exception as e:
                 messagebox.showerror("Lỗi Đăng Nhập", str(e))
 
         threading.Thread(target=login_thread, daemon=True).start()
 
 class FileTransferGUI:
-    def __init__(self, root, client):
+    def __init__(self, root):
         self.root = root
-        self.client = client
         self.root.title("Client Chuyển Tệp Tin")
         self.root.geometry("800x600")
-        # Không gọi setup_gui() ở đây
+        
+        self.client = transfer.FileTransferClient()
+        self.setup_gui()
 
     def setup_gui(self):
         # Frame chính
@@ -102,7 +102,6 @@ class FileTransferGUI:
         # Thanh trạng thái
         self.status_var = tk.StringVar(value="Chưa kết nối")
         ttk.Label(self.main_frame, textvariable=self.status_var).pack(fill=tk.X, pady=(5, 0))
-        pass
 
     def connect_and_login(self):
         try:
