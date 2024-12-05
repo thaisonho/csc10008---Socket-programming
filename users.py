@@ -1,43 +1,68 @@
-import json
-from pathlib import Path
+import sqlite3
 import hashlib
 import os
 
 class UserManager:
-    def __init__(self, users_file='users.json'):
-        self.users_file = users_file
-        self.users = self.load_users()
-        
-    def load_users(self):
-        if os.path.exists(self.users_file):
-            with open(self.users_file, 'r') as f:
-                self.users = json.load(f)
-        else:
-            self.users = {}
-        return self.users
-        
-    def _save_users(self):
-        with open(self.users_file, 'w') as f:
-            json.dump(self.users, f, indent=4)
-            
+    def __init__(self, db_file='users.db'):
+        self.db_file = db_file
+        self._initialize_database()
+
+    def _initialize_database(self):
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    storage_dir TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+
     def _hash_password(self, password):
         return hashlib.sha256(password.encode()).hexdigest()
-        
-    def add_user(self, username, password, storage_dir=None):
-        if username in self.users:
-            return False  # Người dùng đã tồn tại
-        if storage_dir is None:
-            storage_dir = os.path.join('user_storage', username)
+
+    def add_user(self, username, password):
+        # Tự động tạo đường dẫn lưu trữ dựa trên tên người dùng
+        storage_dir = os.path.join('user_storage', username)
         hashed_password = self._hash_password(password)
-        self.users[username] = {'password': hashed_password, 'storage_dir': storage_dir}
-        self._save_users()
-        os.makedirs(storage_dir, exist_ok=True)
-        return True
-        
+
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO users (username, password, storage_dir)
+                    VALUES (?, ?, ?)
+                """, (username, hashed_password, storage_dir))
+                conn.commit()
+            os.makedirs(storage_dir, exist_ok=True)
+            return True
+        except sqlite3.IntegrityError:
+            return False  # Người dùng đã tồn tại
+
     def verify_user(self, username, password):
-        return username in self.users and self.users[username]['password'] == self._hash_password(password)
-        
+        hashed_password = self._hash_password(password)
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM users WHERE username = ? AND password = ?
+            """, (username, hashed_password))
+            return cursor.fetchone() is not None
+
+    def user_exists(self, username):
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM users WHERE username = ?
+            """, (username,))
+            return cursor.fetchone() is not None
+
     def get_user_storage(self, username):
-        if username not in self.users:
-            return None
-        return self.users[username]['storage_dir']
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT storage_dir FROM users WHERE username = ?
+            """, (username,))
+            result = cursor.fetchone()
+            return result[0] if result else None
