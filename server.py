@@ -112,7 +112,12 @@ class FileTransferServer:
                     if not files:
                         self.send_message(client_socket, "ERROR|Không có tệp tin")
                     else:
-                        file_list = "\n".join(files)
+                        file_info = []
+                        for file in files:
+                            filepath = os.path.join(storage_dir, file)
+                            size = os.path.getsize(filepath)
+                            file_info.append(f"{file}|{size}")
+                        file_list = "\n".join(file_info)
                         self.send_message(client_socket, file_list)
 
         except Exception as e:
