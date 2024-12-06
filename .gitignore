@@ -166,3 +166,5 @@ cython_debug/
 
 users.json
 /server_storage
+users.db
+/user_storage
