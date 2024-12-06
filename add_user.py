@@ -9,7 +9,7 @@ def main():
     password = input("Nhập mật khẩu: ")
 
     if um.add_user(username, password):
-        print(f"Thêm người dùng '{username}' thành công. Thư mục lưu trữ được tạo tại: 'user_storage/{username}'.")
+        print(f"Thêm người dùng '{username}' thành công.")
     else:
         print(f"Error: Người dùng")
 
