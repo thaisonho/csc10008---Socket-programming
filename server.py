@@ -27,46 +27,64 @@ class FileTransferServer:
         finally:
             server_socket.close()
 
-    def handle_client(self, client_socket, address):
-        try:
-            # Kiểm tra phiên bản giao thức
-            version_msg = self.receive_message(client_socket)
-            if version_msg.startswith("VERSION"):
-                client_version = version_msg.split()[1]
-                if client_version == "1.0":
-                    self.send_message(client_socket, "VERSION_OK")
-                else:
-                    self.send_message(client_socket, "VERSION_ERROR")
-                    client_socket.close()
-                    return
+    def versioin_check(self, client_socket):
+        version_msg = self.receive_message(client_socket)
+        if version_msg.startswith("VERSION"):
+            client_version = version_msg.split()[1]
+            if client_version == "1.0":
+                self.send_message(client_socket, "VERSION_OK")
             else:
                 self.send_message(client_socket, "VERSION_ERROR")
                 client_socket.close()
                 return
+        else:
+            self.send_message(client_socket, "VERSION_ERROR")
+            client_socket.close()
+            return
+
+
+    def handle_client(self, client_socket, address):
+        try:
+            # Kiểm tra phiên bản giao thức
+            self.versioin_check(client_socket)
 
             # Đăng nhập
             login_attempts = 3
-            while login_attempts > 0:
-                command = self.receive_message(client_socket)
-                if command.startswith("LOGIN"):
-                    parts = command.split('|')
-                    if len(parts) != 3:
-                        self.send_message(client_socket, "ERROR|Định dạng đăng nhập không hợp lệ")
-                        continue
-                    username, password = parts[1], parts[2]
-                    if self.user_manager.verify_user(username, password):
-                        self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
-                        self.active_users[address] = username
-                        break
-                    else:
-                        login_attempts -= 1
-                        self.send_message(client_socket, f"ERROR|Tên đăng nhập hoặc mật khẩu không đúng. Còn {login_attempts} lần thử.")
-                else:
-                    self.send_message(client_socket, "ERROR|Phải đăng nhập trước khi thực hiện")
-            else:
-                self.send_message(client_socket, "ERROR|Quá số lần đăng nhập")
-                client_socket.close()
-                return
+            while self.active_users.get(address) is None:
+                command_first = self.receive_message(client_socket)
+                if command_first.startswith("LOGIN"):
+                    while login_attempts > 0:
+                        # Xử lý đăng nhập (giữ nguyên phần này)
+                        parts = command_first.split('|')
+                        if len(parts) != 3:
+                            self.send_message(client_socket, "ERROR|Định dạng đăng nhập không hợp lệ")
+                            continue
+                        username, password = parts[1], parts[2]
+                        if self.user_manager.verify_user(username, password):
+                            self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
+                            self.active_users[address] = username
+                            break
+                        else:
+                            self.send_message(client_socket, "ERROR|Tên đăng nhập hoặc mật khẩu không đúng")
+                            login_attempts -= 1
+                if command_first.startswith("SIGNUP"):
+                    while True:
+                        # Xử lý đăng ký
+                        parts = command_first.split('|')
+                        if len(parts) != 3:
+                            self.send_message(client_socket, "ERROR|Định dạng đăng ký không hợp lệ")
+                            break
+                        username, password = parts[1], parts[2]
+                        if self.user_manager.user_exists(username):
+                            self.send_message(client_socket, "ERROR|Người dùng đã tồn tại")
+                            break
+                        else:
+                            if self.user_manager.add_user(username, password):
+                                self.send_message(client_socket, "SUCCESS|Đăng ký thành công")
+                                break
+                            else:
+                                self.send_message(client_socket, "ERROR|Đăng ký thất bại")
+                                break
 
             # Xử lý các lệnh sau khi đăng nhập thành công
             while True:

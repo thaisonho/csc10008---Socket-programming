@@ -31,7 +31,10 @@ class LoginWindow:
         self.password_entry.grid(row=1, column=1, pady=5)
 
         login_button = ttk.Button(frame, text="Đăng Nhập", command=self.attempt_login)
-        login_button.grid(row=2, column=0, columnspan=2, pady=10)
+        login_button.grid(row=2, column=0, padx=5, pady=10)
+
+        signup_button = ttk.Button(frame, text="Tạo Tài Khoản", command=self.attempt_signup)
+        signup_button.grid(row=2, column=1, padx=5, pady=10)
 
     def attempt_login(self):
         username = self.username_entry.get()
@@ -47,6 +50,21 @@ class LoginWindow:
                 messagebox.showerror("Lỗi Đăng Nhập", str(e))
 
         threading.Thread(target=login_thread, daemon=True).start()
+
+    def attempt_signup(self):
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+
+        def signup_thread():
+            try:
+                if self.client.signup(username, password):
+                    messagebox.showinfo("Thành công", "Tạo tài khoản thành công. Bạn có thể đăng nhập ngay bây giờ.")
+                else:
+                    messagebox.showerror("Lỗi", "Đăng ký thất bại")
+            except Exception as e:
+                messagebox.showerror("Lỗi Đăng Ký", str(e))
+
+        threading.Thread(target=signup_thread, daemon=True).start()
 
 class FileTransferGUI:
     def __init__(self, root):

@@ -53,6 +53,19 @@ class FileTransferClient:
         except Exception as e:
             raise Exception(f"Lỗi đăng nhập: {str(e)}")
 
+    def signup(self, username, password):
+        try:
+            # Gửi thông tin đăng ký
+            self.send_message(f"SIGNUP|{username}|{password}")
+            response = self.receive_message()
+            if response.startswith("SUCCESS"):
+                return True
+            else:
+                error_message = response.split('|', 1)[1] if '|' in response else response
+                raise Exception(error_message)
+        except Exception as e:
+            raise Exception(f"Lỗi đăng ký: {str(e)}")
+
     def upload_file(self, filepath, progress_callback=None):
         try:
             if not os.path.exists(filepath):
