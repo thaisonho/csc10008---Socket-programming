@@ -5,6 +5,22 @@ from pathlib import Path
 from users import UserManager
 import hashlib
 import requests
+import logging
+import datetime
+
+LOG_DIR = 'logs'
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+
+log_file = os.path.join(LOG_DIR, f'server_{datetime.datetime.now().strftime('%d%m%Y_%H%M%S')}.log')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
 
 class FileTransferServer:
     def __init__(self, host='0.0.0.0', port=8386):
@@ -15,6 +31,7 @@ class FileTransferServer:
         self.shutdown_event = threading.Event()
         self.client_threads = []
         self.server_socket = None
+        logging.info(f'Server initialized')
         
     def generate_file_checksum(self, file_path):
         sha256_hash = hashlib.sha256()
@@ -24,21 +41,59 @@ class FileTransferServer:
         return sha256_hash.hexdigest()
 
     def start(self):
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.bind((self.host, self.port))
-        self.server_socket.listen(5)
-        self.server_socket.settimeout(1.0)
+        # self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # self.server_socket.bind((self.host, self.port))
+        # self.server_socket.listen(5)
+        # self.server_socket.settimeout(1.0)
         
-        print(f"Server đang chạy trên {self.host}:{self.port}")
-        local_ip = self.get_local_ip()
-        public_ip = self.get_public_ip()
-        print(f"Địa chỉ IP local: {local_ip}")
-        print(f"Địa chỉ IP public: {public_ip}")
+        # logging.info(f'Server running on {self.host}:{self.port}')
+        # logging.info(f'Local IP address: {self.get_local_ip()}')
+        # logging.info(f'Public IP address: {self.get_public_ip()}')
+        # print(f"Server đang chạy trên {self.host}:{self.port}")
+        # local_ip = self.get_local_ip()
+        # public_ip = self.get_public_ip()
+        # print(f"Địa chỉ IP local: {local_ip}")
+        # print(f"Địa chỉ IP public: {public_ip}")
+        # try:
+        #     while not self.shutdown_event.is_set():
+        #         try:
+        #             client_socket, addr = self.server_socket.accept()
+        #             print(f"Đã kết nối từ {addr}")
+        #             client_handler = threading.Thread(
+        #                 target=self.handle_client, 
+        #                 args=(client_socket, addr),
+        #                 daemon=True
+        #             )
+        #             client_handler.start()
+        #             self.client_threads.append(client_handler)
+        #         except socket.timeout:
+        #             continue
+        #         except OSError:
+        #             break
+        # except KeyboardInterrupt:
+        #     print('Receive keyboard interrupt')
+        # finally:
+        #     self.shutdown()
         try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(5)
+            self.server_socket.settimeout(1.0)
+            
+            logging.info(f'Server running on {self.host}:{self.port}')
+            logging.info(f'Local IP address: {self.get_local_ip()}')
+            logging.info(f'Public IP address: {self.get_public_ip()}')
+            print(f"Server đang chạy trên {self.host}:{self.port}")
+            local_ip = self.get_local_ip()
+            public_ip = self.get_public_ip()
+            print(f"Địa chỉ IP local: {local_ip}")
+            print(f"Địa chỉ IP public: {public_ip}")
+
             while not self.shutdown_event.is_set():
                 try:
                     client_socket, addr = self.server_socket.accept()
                     print(f"Đã kết nối từ {addr}")
+                    logging.info(f"New connection accepted from {addr}")
                     client_handler = threading.Thread(
                         target=self.handle_client, 
                         args=(client_socket, addr),
@@ -50,36 +105,97 @@ class FileTransferServer:
                     continue
                 except OSError:
                     break
+
         except KeyboardInterrupt:
-            print('Receive keyboard interrupt')
+            logging.info("Keyboard interrupt received")
+            print("Server shutdown initiated by keyboard interrupt")
+        except Exception as e:
+            logging.error(f"Unexpected error: {str(e)}")
         finally:
+            # Ensure shutdown is called and logs are flushed
             self.shutdown()
+            for handler in logging.getLogger().handlers:
+                handler.flush()
 
-    def shutdown(self):
-        print('Server is closing...\n')
-        self.shutdown_event.set()
+    # def shutdown(self):
+    #     print('Server is closing...\n')
+    #     logging.info('Server is closing...')
+    #     self.shutdown_event.set()
 
-        for addr, username in list(self.active_users.items()):
-            try:
-                client_socket = next(
-                    thread._args[0] for thread in self.client_threads
-                    if thread._args[1] == addr
-                )
-                self.send_message(client_socket, "SERVER_SHUTDOWN")
-            except Exception as e:
-                print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
+    #     for addr, username in list(self.active_users.items()):
+    #         try:
+    #             client_socket = next(
+    #                 thread._args[0] for thread in self.client_threads
+    #                 if thread._args[1] == addr
+    #             )
+    #             self.send_message(client_socket, "SERVER_SHUTDOWN")
+    #         except Exception as e:
+    #             print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
                 
-        if self.server_socket:
-            self.server_socket.close()
+    #     if self.server_socket:
+    #         self.server_socket.close()
         
-        for addr in list(self.active_users.keys()):
-            if addr in self.active_users:
-                del self.active_users[addr]
+    #     for addr in list(self.active_users.keys()):
+    #         if addr in self.active_users:
+    #             del self.active_users[addr]
         
-        for thread in self.client_threads:
-            thread.join(timeout=2.0)
+    #     for thread in self.client_threads:
+    #         thread.join(timeout=2.0)
+        
+    #     logging.info('Server closed')
+    #     print('Server đã tắt')
+    def shutdown(self):
+        try:
+            logging.info('Starting server shutdown sequence...')
+            print('Server is closing...\n')
+            self.shutdown_event.set()
 
-        print('Server đã tắt')
+            # Notify all clients
+            for addr, username in list(self.active_users.items()):
+                try:
+                    client_socket = next(
+                        thread._args[0] for thread in self.client_threads
+                        if thread._args[1] == addr
+                    )
+                    self.send_message(client_socket, "SERVER_SHUTDOWN")
+                    logging.info(f'Notified client {username} at {addr} about shutdown')
+                except Exception as e:
+                    logging.error(f'Failed to notify client {addr}: {str(e)}')
+                    print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
+                    
+            # Close server socket
+            if self.server_socket:
+                try:
+                    self.server_socket.close()
+                    logging.info('Server socket closed')
+                except Exception as e:
+                    logging.error(f'Error closing server socket: {str(e)}')
+            
+            # Clean up active users
+            for addr in list(self.active_users.keys()):
+                if addr in self.active_users:
+                    logging.info(f'Removing active user at {addr}')
+                    del self.active_users[addr]
+            
+            # Join client threads
+            for thread in self.client_threads:
+                try:
+                    thread.join(timeout=2.0)
+                    logging.info(f'Client thread joined: {thread.name}')
+                except Exception as e:
+                    logging.error(f'Error joining thread {thread.name}: {str(e)}')
+            
+            logging.info('Server shutdown completed')
+            print('Server đã tắt')
+            
+            # Ensure all logs are written
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+                handler.close()
+                
+        except Exception as e:
+            logging.critical(f'Unexpected error during shutdown: {str(e)}')
+            raise
 
     def version_check(self, client_socket):
         version_msg = self.receive_message(client_socket)
@@ -96,6 +212,7 @@ class FileTransferServer:
             self.send_message(client_socket, "VERSION_ERROR")
             client_socket.close()
             return False
+        
     def get_local_ip(self):
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
@@ -108,8 +225,10 @@ class FileTransferServer:
 
     def handle_client(self, client_socket, address):
         try:
+            logging.info(f'New connection from {address}')
             client_socket.settimeout(1.0)
             if not self.version_check(client_socket):
+                logging.warning(f'Version check failed for {address}')
                 return
 
             login_attempts = 3
@@ -121,6 +240,7 @@ class FileTransferServer:
                 if not command_first:
                     break
                 if command_first.startswith("LOGIN"):
+                    logging.info(f'Login attempt from {address}')
                     while login_attempts > 0:
                         parts = command_first.split('|')
                         if len(parts) != 3:
@@ -133,9 +253,11 @@ class FileTransferServer:
                         if self.user_manager.verify_user(username, password):
                             self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
                             self.active_users[address] = username
+                            logging.info(f'Successfully login as {username} from {address}')
                             break
                         else:
                             self.send_message(client_socket, "ERROR|Tên đăng nhập hoặc mật khẩu không đúng")
+                            logging.warning(f'Login (attempt {4 - login_attempts}) failed for {username} from {address}')
                             login_attempts -= 1
                             break
                 elif command_first.startswith("SIGNUP"):
@@ -151,8 +273,10 @@ class FileTransferServer:
                         else:
                             if self.user_manager.add_user(username, password):
                                 self.send_message(client_socket, "SUCCESS|Đăng ký thành công")
+                                logging.info(f'New user {username} registered from {address}')
                                 break
                             else:
+                                logging.warning(f'Failed to register new user {username} from {address}')
                                 self.send_message(client_socket, "ERROR|Đăng ký thất bại")
                                 break
                 else:
@@ -248,6 +372,7 @@ class FileTransferServer:
                     if not os.path.exists(filepath):
                         self.send_message(client_socket, "FILE_NOT_FOUND")
                     else:
+                        logging.info(f'File download request from {address}: {filename}')
                         filesize = os.path.getsize(filepath)
                         self.send_message(client_socket, str(filesize))
                         response = self.receive_message(client_socket)
@@ -264,6 +389,7 @@ class FileTransferServer:
                                         client_socket.sendall(data)
                                 print(f"Gửi tệp tin: {filename} đến {address} thành công")
                                 self.send_message(client_socket, "SUCCESS")
+                                logging.info(f'File {filename} sent to {address}')
                             else:
                                 self.send_message(client_socket, "ERROR|Client không nhận được checksum")
                         else:
@@ -291,8 +417,10 @@ class FileTransferServer:
 
         except Exception as e:
             print(f"Lỗi khi xử lý client {address}: {e}")
+            logging.error(f'Error handling client {address}: {e}')
         finally:
             if address in self.active_users:
+                logging.info(f'User {self.active_users[address]} disconnected from {address}')
                 del self.active_users[address]
             client_socket.close()
             print(f"Đã ngắt kết nối với {address}")
