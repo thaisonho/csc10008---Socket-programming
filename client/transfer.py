@@ -67,7 +67,16 @@ class FileTransferClient:
             return message
         except Exception as e:
             raise Exception(f"Lỗi nhận tin nhắn: {str(e)}")
-
+    def signup(self, username, password):
+        try:
+            self.send_message(f"SIGNUP|{username}|{password}")
+            response = self.receive_message()
+            if response.startswith("SUCCESS"):
+                return True
+            else:
+                raise Exception(response.split('|', 1)[1] if '|' in response else response)
+        except Exception as e:
+            raise Exception(f"Lỗi đăng ký: {str(e)}")
     def login(self, username, password):
         try:
             # Gửi thông tin đăng nhập
