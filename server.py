@@ -6,13 +6,16 @@ from users import UserManager
 import hashlib
 
 class FileTransferServer:
-    def __init__(self, host='0.0.0.0', port=5000):
+    def __init__(self, host='0.0.0.0', port=8386):
         self.host = host
         self.port = port
         self.user_manager = UserManager()
         self.active_users = {}
+        self.shutdown_event = threading.Event()
+        self.client_threads = []
+        self.server_socket = None
         
-    def generate_file_checksum(self,file_path):
+    def generate_file_checksum(self, file_path):
         sha256_hash = hashlib.sha256()
         with open(file_path, "rb") as f:
             for byte_block in iter(lambda: f.read(4096), b""):
@@ -20,65 +23,136 @@ class FileTransferServer:
         return sha256_hash.hexdigest()
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.server_socket.settimeout(1.0)
+        
         print(f"Server đang chạy trên {self.host}:{self.port}")
         try:
-            while True:
-                client_socket, addr = server_socket.accept()
-                print(f"Đã kết nối từ {addr}")
-                client_handler = threading.Thread(target=self.handle_client, args=(client_socket, addr))
-                client_handler.start()
+            while not self.shutdown_event.is_set():
+                try:
+                    client_socket, addr = self.server_socket.accept()
+                    print(f"Đã kết nối từ {addr}")
+                    client_handler = threading.Thread(
+                        target=self.handle_client, 
+                        args=(client_socket, addr),
+                        daemon=True
+                    )
+                    client_handler.start()
+                    self.client_threads.append(client_handler)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
         except KeyboardInterrupt:
-            print("Đang tắt server...")
+            print('Receive keyboard interrupt')
         finally:
-            server_socket.close()
+            self.shutdown()
 
-    def handle_client(self, client_socket, address):
-        try:
-            # Kiểm tra phiên bản giao thức
-            version_msg = self.receive_message(client_socket)
-            if version_msg.startswith("VERSION"):
-                client_version = version_msg.split()[1]
-                if client_version == "1.0":
-                    self.send_message(client_socket, "VERSION_OK")
-                else:
-                    self.send_message(client_socket, "VERSION_ERROR")
-                    client_socket.close()
-                    return
+    def shutdown(self):
+        print('Server is closing...\n')
+        self.shutdown_event.set()
+
+        for addr, username in list(self.active_users.items()):
+            try:
+                client_socket = next(
+                    thread._args[0] for thread in self.client_threads
+                    if thread._args[1] == addr
+                )
+                self.send_message(client_socket, "SERVER_SHUTDOWN")
+            except Exception as e:
+                print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
+                
+        if self.server_socket:
+            self.server_socket.close()
+        
+        for addr in list(self.active_users.keys()):
+            if addr in self.active_users:
+                del self.active_users[addr]
+        
+        for thread in self.client_threads:
+            thread.join(timeout=2.0)
+
+        print('Server đã tắt')
+
+    def version_check(self, client_socket):
+        version_msg = self.receive_message(client_socket)
+        if version_msg.startswith("VERSION"):
+            client_version = version_msg.split()[1]
+            if client_version == "1.0":
+                self.send_message(client_socket, "VERSION_OK")
+                return True
             else:
                 self.send_message(client_socket, "VERSION_ERROR")
                 client_socket.close()
+                return False
+        else:
+            self.send_message(client_socket, "VERSION_ERROR")
+            client_socket.close()
+            return False
+
+    def handle_client(self, client_socket, address):
+        try:
+            client_socket.settimeout(1.0)
+            if not self.version_check(client_socket):
                 return
 
-            # Đăng nhập
             login_attempts = 3
-            while login_attempts > 0:
-                command = self.receive_message(client_socket)
-                if command.startswith("LOGIN"):
-                    parts = command.split('|')
-                    if len(parts) != 3:
-                        self.send_message(client_socket, "ERROR|Định dạng đăng nhập không hợp lệ")
-                        continue
-                    username, password = parts[1], parts[2]
-                    if self.user_manager.verify_user(username, password):
-                        self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
-                        self.active_users[address] = username
-                        break
-                    else:
-                        login_attempts -= 1
-                        self.send_message(client_socket, f"ERROR|Tên đăng nhập hoặc mật khẩu không đúng. Còn {login_attempts} lần thử.")
+            while self.active_users.get(address) is None and not self.shutdown_event.is_set():
+                command_first = self.receive_message(client_socket)
+                if self.shutdown_event.is_set():
+                    self.send_message(client_socket, "SERVER_SHUTDOWN")
+                    break
+                if not command_first:
+                    break
+                if command_first.startswith("LOGIN"):
+                    while login_attempts > 0:
+                        parts = command_first.split('|')
+                        if len(parts) != 3:
+                            self.send_message(client_socket, "ERROR|Định dạng đăng nhập không hợp lệ")
+                            break
+                        username, password = parts[1], parts[2]
+                        if username == '' or password == '':
+                            self.send_message(client_socket, "ERROR|Tên đăng nhập hoặc mật khẩu không được để trống")
+                            break
+                        if self.user_manager.verify_user(username, password):
+                            self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
+                            self.active_users[address] = username
+                            break
+                        else:
+                            self.send_message(client_socket, "ERROR|Tên đăng nhập hoặc mật khẩu không đúng")
+                            login_attempts -= 1
+                            break
+                elif command_first.startswith("SIGNUP"):
+                    while True:
+                        parts = command_first.split('|')
+                        if len(parts) != 3:
+                            self.send_message(client_socket, "ERROR|Định dạng đăng ký không hợp lệ")
+                            break
+                        username, password = parts[1], parts[2]
+                        if self.user_manager.user_exists(username):
+                            self.send_message(client_socket, "ERROR|Người dùng đã tồn tại")
+                            break
+                        else:
+                            if self.user_manager.add_user(username, password):
+                                self.send_message(client_socket, "SUCCESS|Đăng ký thành công")
+                                break
+                            else:
+                                self.send_message(client_socket, "ERROR|Đăng ký thất bại")
+                                break
                 else:
-                    self.send_message(client_socket, "ERROR|Phải đăng nhập trước khi thực hiện")
-            else:
-                self.send_message(client_socket, "ERROR|Quá số lần đăng nhập")
-                client_socket.close()
+                    self.send_message(client_socket, "ERROR|Unknown command")
+
+            if self.shutdown_event.is_set():
+                self.send_message(client_socket, "SERVER_SHUTDOWN")
                 return
 
-            # Xử lý các lệnh sau khi đăng nhập thành công
-            while True:
+            while not self.shutdown_event.is_set():
                 command = self.receive_message(client_socket)
+                if self.shutdown_event.is_set():
+                    self.send_message(client_socket, "SERVER_SHUTDOWN")
+                    break
                 if not command:
                     break
 
@@ -107,16 +181,20 @@ class FileTransferServer:
                     filepath = os.path.join(storage_dir, filename)
                     bytes_received = 0
                     with open(filepath, 'wb') as f:
-                        while bytes_received < filesize:
-                            data = client_socket.recv(4096)
+                        while bytes_received < filesize and not self.shutdown_event.is_set():
+                            try:
+                                data = client_socket.recv(4096)
+                            except socket.timeout:
+                                continue
                             if not data:
                                 break
                             f.write(data)
                             bytes_received += len(data)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    
-                    # Ensure the file is closed before calculating the checksum
+
+                    if self.shutdown_event.is_set():
+                        self.send_message(client_socket, "SERVER_SHUTDOWN")
+                        break
+
                     if bytes_received == filesize:
                         calculated_checksum = self.generate_file_checksum(filepath)
                         print(f"Checksum: {calculated_checksum}")
@@ -130,7 +208,7 @@ class FileTransferServer:
                     else:
                         self.send_message(client_socket, "ERROR|Tải lên không hoàn thành")
 
-                if command.startswith("DOWNLOAD"):
+                elif command.startswith("DOWNLOAD"):
                     username = self.active_users[address]
                     storage_dir = self.user_manager.get_user_storage(username)
                     parts = command.split(' ', 1)
@@ -149,7 +227,6 @@ class FileTransferServer:
                             checksum = self.generate_file_checksum(filepath)
                             self.send_message(client_socket, f"CHECKSUM:{checksum}")
                             response = self.receive_message(client_socket)
-                            print(f"Checksum: {response}")
                             if response == "CHECKSUM_OK":
                                 with open(filepath, 'rb') as f:
                                     while True:
@@ -178,6 +255,11 @@ class FileTransferServer:
                             file_info.append(f"{file}|{size}")
                         file_list = "\n".join(file_info)
                         self.send_message(client_socket, file_list)
+                else:
+                    self.send_message(client_socket, "ERROR|Unknown command")
+
+            if self.shutdown_event.is_set():
+                self.send_message(client_socket, "SERVER_SHUTDOWN")
 
         except Exception as e:
             print(f"Lỗi khi xử lý client {address}: {e}")
@@ -189,15 +271,25 @@ class FileTransferServer:
 
     def send_message(self, client_socket, message):
         message = f"{message}\n"
-        client_socket.sendall(message.encode())
+        try:
+            client_socket.sendall(message.encode())
+        except Exception as e:
+            print(f"Error sending message: {e}")
 
     def receive_message(self, client_socket):
         data = ''
-        while not data.endswith('\n'):
-            packet = client_socket.recv(4096).decode()
-            if not packet:
-                break
-            data += packet
+        try:
+            while not data.endswith('\n') and not self.shutdown_event.is_set():
+                try:
+                    packet = client_socket.recv(4096).decode()
+                except socket.timeout:
+                    continue
+                if not packet:
+                    break
+                data += packet
+        except Exception as e:
+            print(f"Error receiving message: {e}")
+            return ''
         return data.strip()
 
 if __name__ == "__main__":
