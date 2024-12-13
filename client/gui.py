@@ -12,11 +12,18 @@ class LoginWindow:
         self.master = master
         self.client = client
         self.on_success = on_success
-
+        self.client.set_shutdown_callback(self.handle_server_shutdown)
         self.master.title("Đăng Nhập")
         self.master.geometry("300x150")
 
         self.setup_gui()
+
+    def handle_server_shutdown(self):
+        def show_shutdown_message():
+            messagebox.showwarning("Thông Báo", "Server đã ngắt kết nối")
+            self.master.quit()
+        
+        self.master.after(0, show_shutdown_message)
 
     def setup_gui(self):
         frame = ttk.Frame(self.master, padding="20")
@@ -122,13 +129,21 @@ class FileTransferGUI:
         ttk.Label(self.main_frame, textvariable=self.status_var).pack(fill=tk.X, pady=(5, 0))
 
     def connect_and_login(self):
+        # try:
+        #     self.client.connect()
+        #     self.status_var.set(f"Đã kết nối tới {self.client.host}:{self.client.port}")
+        #     self.open_login_window()
+        # except Exception as e:
+        #     messagebox.showerror("Lỗi Kết Nối", str(e))
+        #     self.root.quit()
         try:
+            self.client = transfer.FileTransferClient()
+            # Set callback before opening login window
+            self.client.set_shutdown_callback(LoginWindow.handle_server_shutdown)
             self.client.connect()
-            self.status_var.set(f"Đã kết nối tới {self.client.host}:{self.client.port}")
             self.open_login_window()
         except Exception as e:
-            messagebox.showerror("Lỗi Kết Nối", str(e))
-            self.root.quit()
+            messagebox.showerror("Lỗi", str(e))
 
     def open_login_window(self):
         login_window = tk.Toplevel(self.root)

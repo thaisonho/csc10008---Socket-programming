@@ -8,6 +8,11 @@ class FileTransferClient:
         self.socket = None
         self.BUFFER_SIZE = 4096  # Kích thước buffer để nhận dữ liệu
         self.PROTOCOL_VERSION = "1.0"
+        self.is_connected = False
+        self.shutdown_callback = None
+
+    def set_shutdown_callback(self, callback):
+        self.shutdown_callback = callback
         
     def connect(self):
         try:
@@ -18,8 +23,10 @@ class FileTransferClient:
             response = self.receive_message()
             if response != "VERSION_OK":
                 raise Exception("Phiên bản giao thức không khớp")
+            self.is_connected = True
             return True
         except Exception as e:
+            self.is_connected = False
             raise Exception(f"Lỗi kết nối: {str(e)}")
 
     def send_message(self, message):
@@ -29,6 +36,13 @@ class FileTransferClient:
         except Exception as e:
             raise Exception(f"Lỗi gửi tin nhắn: {str(e)}")
 
+    def handle_server_shutdown(self):
+        print('\nServer đã ngắt kết nối')
+        self.is_connected = False
+        if self.shutdown_callback:
+            self.shutdown_callback()
+        self.close()
+
     def receive_message(self):
         try:
             data = ''
@@ -37,7 +51,12 @@ class FileTransferClient:
                 if not packet:
                     break
                 data += packet
-            return data.strip()
+            message =  data.strip()
+
+            if message == "SERVER_SHUTDOWN":
+                self.handle_server_shutdown()
+                raise Exception("Server đã ngắt kết nối")
+            return message
         except Exception as e:
             raise Exception(f"Lỗi nhận tin nhắn: {str(e)}")
 
@@ -156,6 +175,7 @@ class FileTransferClient:
 
     def close(self):
         try:
+            self.is_connected = False
             if self.socket:
                 self.socket.close()
         except Exception as e:

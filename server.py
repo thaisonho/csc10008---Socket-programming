@@ -41,22 +41,35 @@ class FileTransferServer:
                 except OSError:
                     break  # Socket has been closed
         except KeyboardInterrupt:
-            print("Đang tắt server...")
-            self.shutdown_event.set()
+            print('Receive keyboard interrupt')
         finally:
-            if self.server_socket:
-                self.server_socket.close()
+            self.shutdown()
 
-            # close all client threads
-            for addr in list(self.active_users.keys()):
-                if addr in self.active_users:
-                    del self.active_users[addr]
+    def shutdown(self):
+        print('Server is closing...\n')
+        self.shutdown_event.set()
+
+        for addr, username in list(self.active_users.items()):
+            try:
+                client_socket = next(
+                    thread._args[0] for thread in self.client_threads
+                    if thread._args[1] == addr
+                )
+                self.send_message(client_socket, "SERVER_SHUTDOWN")
+            except Exception as e:
+                print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
             
-            for thread in self.client_threads:
-                thread.join(timeout=2.0)
+        if self.server_socket:
+            self.server_socket.close()
+        
+        for addr in list(self.active_users.keys()):
+            if addr in self.active_users:
+                del self.active_users[addr]
+        
+        for thread in self.client_threads:
+            thread.join(timeout=2.0)
 
-            print("Server đã tắt")
-
+        print('Server đã tắt')
 
     def version_check(self, client_socket):
         version_msg = self.receive_message(client_socket)
