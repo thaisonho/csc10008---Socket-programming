@@ -100,7 +100,12 @@ class FileTransferClient:
             # Gửi lệnh tải lên
             self.send_message(f"UPLOAD {filename}")
             response = self.receive_message()
-            if response != "FILENAME_OK":
+
+            if response.startswith('NEW_FILENAME|'):
+                new_filename = response.split('|', 1)[1]
+                print(f"\nTên tệp tin đã được thay đổi thành: {new_filename}")
+                filename = new_filename
+            elif response != "FILENAME_OK":
                 raise Exception(f"Không hợp lệ tên tệp tin: {response}")
 
             # Gửi kích thước tệp tin
@@ -128,6 +133,8 @@ class FileTransferClient:
 
             # Đợi phản hồi xác nhận thành công
             response = self.receive_message()
+
+            return filename
             if response != "SUCCESS":
                 raise Exception(f"Tải lên thất bại: {response}")
 

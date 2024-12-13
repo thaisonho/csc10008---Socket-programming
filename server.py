@@ -174,7 +174,21 @@ class FileTransferServer:
                     username = self.active_users[address]
                     storage_dir = self.user_manager.get_user_storage(username)
                     filename = command.split(' ', 1)[1]
-                    self.send_message(client_socket, "FILENAME_OK")
+
+                    original_filename = filename
+                    file_base, file_ext = os.path.splitext(filename)
+                    counter = 1
+                    while os.path.exists(os.path.join(storage_dir, filename)):
+                        filename = f'{file_base} ({counter}){file_ext}'
+                        counter += 1
+
+                    if filename != original_filename:
+                        # inform client that file name has been changed
+                        self.send_message(client_socket, f"NEW_FILENAME|{filename}")
+                    else:
+                        self.send_message(client_socket, "FILENAME_OK")
+                        
+                    # self.send_message(client_socket, "FILENAME_OK")
                     
                     filesize_str = self.receive_message(client_socket)
                     filesize = 0
