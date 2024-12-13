@@ -1,4 +1,5 @@
 # client/gui.py
+# client/gui.py
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
@@ -13,6 +14,7 @@ class LoginWindow:
         self.on_success = on_success
         self.client.set_shutdown_callback(self.handle_server_shutdown)
         self.master.title("Đăng Nhập")
+        self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
         self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
 
         self.setup_gui()

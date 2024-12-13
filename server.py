@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from users import UserManager
 import hashlib
+import requests
 
 class FileTransferServer:
     def __init__(self, host='0.0.0.0', port=8386):
@@ -29,6 +30,10 @@ class FileTransferServer:
         self.server_socket.settimeout(1.0)
         
         print(f"Server đang chạy trên {self.host}:{self.port}")
+        local_ip = self.get_local_ip()
+        public_ip = self.get_public_ip()
+        print(f"Địa chỉ IP local: {local_ip}")
+        print(f"Địa chỉ IP public: {public_ip}")
         try:
             while not self.shutdown_event.is_set():
                 try:
@@ -91,6 +96,15 @@ class FileTransferServer:
             self.send_message(client_socket, "VERSION_ERROR")
             client_socket.close()
             return False
+    def get_local_ip(self):
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        return local_ip
+
+    def get_public_ip(self):
+        response = requests.get('https://api.ipify.org?format=json')
+        public_ip = response.json()['ip']
+        return public_ip
 
     def handle_client(self, client_socket, address):
         try:
