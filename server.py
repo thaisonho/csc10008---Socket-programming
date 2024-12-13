@@ -41,39 +41,6 @@ class FileTransferServer:
         return sha256_hash.hexdigest()
 
     def start(self):
-        # self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # self.server_socket.bind((self.host, self.port))
-        # self.server_socket.listen(5)
-        # self.server_socket.settimeout(1.0)
-        
-        # logging.info(f'Server running on {self.host}:{self.port}')
-        # logging.info(f'Local IP address: {self.get_local_ip()}')
-        # logging.info(f'Public IP address: {self.get_public_ip()}')
-        # print(f"Server đang chạy trên {self.host}:{self.port}")
-        # local_ip = self.get_local_ip()
-        # public_ip = self.get_public_ip()
-        # print(f"Địa chỉ IP local: {local_ip}")
-        # print(f"Địa chỉ IP public: {public_ip}")
-        # try:
-        #     while not self.shutdown_event.is_set():
-        #         try:
-        #             client_socket, addr = self.server_socket.accept()
-        #             print(f"Đã kết nối từ {addr}")
-        #             client_handler = threading.Thread(
-        #                 target=self.handle_client, 
-        #                 args=(client_socket, addr),
-        #                 daemon=True
-        #             )
-        #             client_handler.start()
-        #             self.client_threads.append(client_handler)
-        #         except socket.timeout:
-        #             continue
-        #         except OSError:
-        #             break
-        # except KeyboardInterrupt:
-        #     print('Receive keyboard interrupt')
-        # finally:
-        #     self.shutdown()
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.bind((self.host, self.port))
@@ -117,33 +84,6 @@ class FileTransferServer:
             for handler in logging.getLogger().handlers:
                 handler.flush()
 
-    # def shutdown(self):
-    #     print('Server is closing...\n')
-    #     logging.info('Server is closing...')
-    #     self.shutdown_event.set()
-
-    #     for addr, username in list(self.active_users.items()):
-    #         try:
-    #             client_socket = next(
-    #                 thread._args[0] for thread in self.client_threads
-    #                 if thread._args[1] == addr
-    #             )
-    #             self.send_message(client_socket, "SERVER_SHUTDOWN")
-    #         except Exception as e:
-    #             print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
-                
-    #     if self.server_socket:
-    #         self.server_socket.close()
-        
-    #     for addr in list(self.active_users.keys()):
-    #         if addr in self.active_users:
-    #             del self.active_users[addr]
-        
-    #     for thread in self.client_threads:
-    #         thread.join(timeout=2.0)
-        
-    #     logging.info('Server closed')
-    #     print('Server đã tắt')
     def shutdown(self):
         try:
             logging.info('Starting server shutdown sequence...')
