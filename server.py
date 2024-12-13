@@ -3,6 +3,8 @@ import threading
 import os
 from pathlib import Path
 from users import UserManager
+import hashlib
+import requests
 
 class FileTransferServer:
     def __init__(self, host='0.0.0.0', port=8386):
@@ -13,17 +15,25 @@ class FileTransferServer:
         self.shutdown_event = threading.Event()
         self.client_threads = []
         self.server_socket = None
+        
+    def generate_file_checksum(self, file_path):
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
 
     def start(self):
-        # server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # server_socket.bind((self.host, self.port))
-        # server_socket.listen(5)
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
         self.server_socket.settimeout(1.0)
         
         print(f"Server đang chạy trên {self.host}:{self.port}")
+        local_ip = self.get_local_ip()
+        public_ip = self.get_public_ip()
+        print(f"Địa chỉ IP local: {local_ip}")
+        print(f"Địa chỉ IP public: {public_ip}")
         try:
             while not self.shutdown_event.is_set():
                 try:
@@ -39,7 +49,7 @@ class FileTransferServer:
                 except socket.timeout:
                     continue
                 except OSError:
-                    break  # Socket has been closed
+                    break
         except KeyboardInterrupt:
             print('Receive keyboard interrupt')
         finally:
@@ -58,7 +68,7 @@ class FileTransferServer:
                 self.send_message(client_socket, "SERVER_SHUTDOWN")
             except Exception as e:
                 print(f'Không thể thông báo cho client {addr} về việc tắt server: {e}')
-            
+                
         if self.server_socket:
             self.server_socket.close()
         
@@ -77,22 +87,31 @@ class FileTransferServer:
             client_version = version_msg.split()[1]
             if client_version == "1.0":
                 self.send_message(client_socket, "VERSION_OK")
+                return True
             else:
                 self.send_message(client_socket, "VERSION_ERROR")
                 client_socket.close()
-                return
+                return False
         else:
             self.send_message(client_socket, "VERSION_ERROR")
             client_socket.close()
-            return
+            return False
+    def get_local_ip(self):
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        return local_ip
+
+    def get_public_ip(self):
+        response = requests.get('https://api.ipify.org?format=json')
+        public_ip = response.json()['ip']
+        return public_ip
 
     def handle_client(self, client_socket, address):
         try:
             client_socket.settimeout(1.0)
-            # Kiểm tra phiên bản giao thức
-            self.version_check(client_socket)
+            if not self.version_check(client_socket):
+                return
 
-            # Đăng nhập
             login_attempts = 3
             while self.active_users.get(address) is None and not self.shutdown_event.is_set():
                 command_first = self.receive_message(client_socket)
@@ -108,6 +127,9 @@ class FileTransferServer:
                             self.send_message(client_socket, "ERROR|Định dạng đăng nhập không hợp lệ")
                             break
                         username, password = parts[1], parts[2]
+                        if username == '' or password == '':
+                            self.send_message(client_socket, "ERROR|Tên đăng nhập hoặc mật khẩu không được để trống")
+                            break
                         if self.user_manager.verify_user(username, password):
                             self.send_message(client_socket, "SUCCESS|Đăng nhập thành công")
                             self.active_users[address] = username
@@ -138,9 +160,8 @@ class FileTransferServer:
 
             if self.shutdown_event.is_set():
                 self.send_message(client_socket, "SERVER_SHUTDOWN")
-                return  # Exit the thread
+                return
 
-            # Xử lý các lệnh sau khi đăng nhập thành công
             while not self.shutdown_event.is_set():
                 command = self.receive_message(client_socket)
                 if self.shutdown_event.is_set():
@@ -156,6 +177,7 @@ class FileTransferServer:
                     self.send_message(client_socket, "FILENAME_OK")
                     
                     filesize_str = self.receive_message(client_socket)
+                    filesize = 0
                     try:
                         filesize = int(filesize_str)
                     except ValueError:
@@ -164,9 +186,15 @@ class FileTransferServer:
 
                     self.send_message(client_socket, "READY")
                     
+                    checksum_msg = self.receive_message(client_socket)
+                    checksum = ""
+                    if checksum_msg.startswith("CHECKSUM:"):
+                        checksum = checksum_msg.split(':', 1)[1]
+                        self.send_message(client_socket, "CHECKSUM_OK")
+                    
                     filepath = os.path.join(storage_dir, filename)
+                    bytes_received = 0
                     with open(filepath, 'wb') as f:
-                        bytes_received = 0
                         while bytes_received < filesize and not self.shutdown_event.is_set():
                             try:
                                 data = client_socket.recv(4096)
@@ -182,10 +210,50 @@ class FileTransferServer:
                         break
 
                     if bytes_received == filesize:
-                        self.send_message(client_socket, "SUCCESS")
-                        print(f"Tải lên tệp tin: {filename} thành công từ {address}")
+                        calculated_checksum = self.generate_file_checksum(filepath)
+                        print(f"Checksum: {calculated_checksum}")
+                        
+                        if checksum != calculated_checksum:
+                            self.send_message(client_socket, "ERROR|Checksum không khớp")
+                            os.remove(filepath)
+                        else:
+                            self.send_message(client_socket, "SUCCESS")
+                            print(f"Tải lên tệp tin: {filename} thành công từ {address}")
                     else:
                         self.send_message(client_socket, "ERROR|Tải lên không hoàn thành")
+
+                elif command.startswith("DOWNLOAD"):
+                    username = self.active_users[address]
+                    storage_dir = self.user_manager.get_user_storage(username)
+                    parts = command.split(' ', 1)
+                    if len(parts) < 2:
+                        self.send_message(client_socket, "ERROR|Định dạng lệnh không hợp lệ")
+                        continue
+                    filename = parts[1]
+                    filepath = os.path.join(storage_dir, filename)
+                    if not os.path.exists(filepath):
+                        self.send_message(client_socket, "FILE_NOT_FOUND")
+                    else:
+                        filesize = os.path.getsize(filepath)
+                        self.send_message(client_socket, str(filesize))
+                        response = self.receive_message(client_socket)
+                        if response == "READY":
+                            checksum = self.generate_file_checksum(filepath)
+                            self.send_message(client_socket, f"CHECKSUM:{checksum}")
+                            response = self.receive_message(client_socket)
+                            if response == "CHECKSUM_OK":
+                                with open(filepath, 'rb') as f:
+                                    while True:
+                                        data = f.read(4096)
+                                        if not data:
+                                            break
+                                        client_socket.sendall(data)
+                                print(f"Gửi tệp tin: {filename} đến {address} thành công")
+                                self.send_message(client_socket, "SUCCESS")
+                            else:
+                                self.send_message(client_socket, "ERROR|Client không nhận được checksum")
+                        else:
+                            self.send_message(client_socket, "ERROR|Không sẵn sàng nhận tệp tin")
 
                 elif command.startswith("LIST"):
                     username = self.active_users[address]
@@ -206,7 +274,6 @@ class FileTransferServer:
 
             if self.shutdown_event.is_set():
                 self.send_message(client_socket, "SERVER_SHUTDOWN")
-                return  # Exit the thread
 
         except Exception as e:
             print(f"Lỗi khi xử lý client {address}: {e}")

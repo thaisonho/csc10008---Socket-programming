@@ -1,5 +1,6 @@
 import os
 import socket
+import hashlib
 
 class FileTransferClient:
     def __init__(self, host='localhost', port=8386):
@@ -13,6 +14,13 @@ class FileTransferClient:
 
     def set_shutdown_callback(self, callback):
         self.shutdown_callback = callback
+        
+    def generate_file_checksum(self,file_path):
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
         
     def connect(self):
         try:
@@ -72,19 +80,6 @@ class FileTransferClient:
         except Exception as e:
             raise Exception(f"Lỗi đăng nhập: {str(e)}")
 
-    def signup(self, username, password):
-        try:
-            # Gửi thông tin đăng ký
-            self.send_message(f"SIGNUP|{username}|{password}")
-            response = self.receive_message()
-            if response.startswith("SUCCESS"):
-                return True
-            else:
-                error_message = response.split('|', 1)[1] if '|' in response else response
-                raise Exception(error_message)
-        except Exception as e:
-            raise Exception(f"Lỗi đăng ký: {str(e)}")
-
     def upload_file(self, filepath, progress_callback=None):
         try:
             if not os.path.exists(filepath):
@@ -104,6 +99,11 @@ class FileTransferClient:
             response = self.receive_message()
             if response != "READY":
                 raise Exception(f"Máy chủ không sẵn sàng: {response}")
+            
+            self.send_message("CHECKSUM:" + self.generate_file_checksum(filepath))
+            response = self.receive_message()
+            if response != "CHECKSUM_OK":
+                raise Exception(f"Gửi checksum thất bại: {response}")
 
             # Gửi dữ liệu tệp tin
             sent = 0
@@ -129,6 +129,7 @@ class FileTransferClient:
         try:
             self.send_message(f"DOWNLOAD {filename}")
             response = self.receive_message()
+            file_size = 0
 
             if response == "FILE_NOT_FOUND":
                 raise Exception("Không tìm thấy tệp tin trên máy chủ")
@@ -140,18 +141,33 @@ class FileTransferClient:
 
             # Gửi READY để nhận tệp tin
             self.send_message("READY")
-
+            
+            checksum_msg = self.receive_message()
+            checksum = ""
+            if checksum_msg.startswith("CHECKSUM:"):
+                checksum = checksum_msg.split(':')[1]
+                self.send_message("CHECKSUM_OK")
+            else:
+                raise Exception(f"Checksum không hợp lệ: {checksum_msg}")
+            
             received = 0
             with open(save_path, 'wb') as f:
                 while received < file_size:
-                    data = self.socket.recv(self.BUFFER_SIZE)
+                    data = self.socket.recv(min(self.BUFFER_SIZE, file_size - received))
                     if not data:
                         break
                     f.write(data)
                     received += len(data)
                     if progress_callback:
                         progress_callback((received / file_size) * 100)
-
+                f.flush()
+                os.fsync(f.fileno())
+                        
+            if checksum != self.generate_file_checksum(save_path):
+                print("Checksum không khớp, tải xuống thất bại")
+                print(f"Checksum: {checksum}")
+                print(f"Checksum tính toán: {self.generate_file_checksum(save_path)}")
+                raise Exception(f'''Checksum không khớp\n checksum: {checksum}\n checksum tính toán: {self.generate_file_checksum(save_path)}''')
             # Đợi phản hồi xác nhận thành công
             response = self.receive_message()
             if response != "SUCCESS":

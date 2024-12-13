@@ -1,10 +1,10 @@
-# import out of project
+# client/gui.py
+# client/gui.py
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import os
 from datetime import datetime
-# import from project
 from . import transfer
 
 class LoginWindow:
@@ -14,10 +14,17 @@ class LoginWindow:
         self.on_success = on_success
         self.client.set_shutdown_callback(self.handle_server_shutdown)
         self.master.title("Đăng Nhập")
-        self.master.geometry("300x150")
+        self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
+        self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
 
         self.setup_gui()
 
+    def center_window(self, width, height):
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        self.master.geometry(f"{width}x{height}+{x}+{y}")
     def handle_server_shutdown(self):
         def show_shutdown_message():
             messagebox.showwarning("Thông Báo", "Server đã ngắt kết nối")
@@ -96,9 +103,6 @@ class FileTransferGUI:
         
         download_btn = ttk.Button(btn_frame, text="Tải Xuống", command=self.download_selected)
         download_btn.pack(side=tk.LEFT, padx=5)
-        
-        refresh_btn = ttk.Button(btn_frame, text="Làm Mới", command=self.refresh_files)
-        refresh_btn.pack(side=tk.LEFT, padx=5)
 
         # Thanh tiến trình
         self.progress_var = tk.DoubleVar()
@@ -151,7 +155,31 @@ class FileTransferGUI:
         LoginWindow(login_window, self.client, self.show_main_gui)
 
     def show_main_gui(self):
+        self.root.deiconify()  # Hiện cửa sổ chính sau khi đăng nhập thành công
         self.refresh_files()
+
+    def refresh_files(self):
+        try:
+            files = self.client.list_files()
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            for file_info in files:
+                # Giả sử máy chủ gửi "filename|size"
+                if '|' in file_info:
+                    name, size = file_info.split('|', 1)
+                    size = self.format_size(int(size))
+                    date = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    self.tree.insert('', tk.END, values=(name, size, date))
+                else:
+                    name = file_info
+                    size = "-"
+                    date = "-"
+                    self.tree.insert('', tk.END, values=(name, size, date))
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể làm mới danh sách tệp tin: {str(e)}")
+
+    def update_progress(self, value):
+        self.progress_var.set(value)
 
     def format_size(self, size):
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -197,26 +225,3 @@ class FileTransferGUI:
                     self.progress_var.set(0)
             
             threading.Thread(target=download, daemon=True).start()
-
-    def refresh_files(self):
-        try:
-            files = self.client.list_files()
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-            for file_info in files:
-                # Giả sử máy chủ gửi "filename|size"
-                if '|' in file_info:
-                    name, size = file_info.split('|', 1)
-                    size = self.format_size(int(size))
-                    date = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    self.tree.insert('', tk.END, values=(name, size, date))
-                else:
-                    name = file_info
-                    size = "-"
-                    date = "-"
-                    self.tree.insert('', tk.END, values=(name, size, date))
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể làm mới danh sách tệp tin: {str(e)}")
-
-    def update_progress(self, value):
-        self.progress_var.set(value)
