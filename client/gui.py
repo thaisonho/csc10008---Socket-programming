@@ -67,6 +67,10 @@ class LoginWindow:
         username = self.username_entry.get()
         password = self.password_entry.get()
 
+        if username == "" or password == "":
+            messagebox.showerror("Lỗi", "Tên người dùng và mật khẩu không được để trống")
+            return
+
         def signup_thread():
             try:
                 if self.client.signup(username, password):
