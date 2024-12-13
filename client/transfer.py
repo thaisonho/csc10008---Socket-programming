@@ -2,7 +2,7 @@ import os
 import socket
 
 class FileTransferClient:
-    def __init__(self, host='localhost', port=5000):
+    def __init__(self, host='localhost', port=8386):
         self.host = host
         self.port = port
         self.socket = None

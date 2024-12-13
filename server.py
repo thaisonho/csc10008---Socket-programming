@@ -12,34 +12,51 @@ class FileTransferServer:
         self.active_users = {}
         self.shutdown_event = threading.Event()
         self.client_threads = []
+        self.server_socket = None
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
+        # server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # server_socket.bind((self.host, self.port))
+        # server_socket.listen(5)
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.server_socket.settimeout(1.0)
         
         print(f"Server đang chạy trên {self.host}:{self.port}")
         try:
             while not self.shutdown_event.is_set():
                 try:
-                    server_socket.settimeout(1.0)
-                    client_socket, addr = server_socket.accept()
+                    client_socket, addr = self.server_socket.accept()
+                    print(f"Đã kết nối từ {addr}")
+                    client_handler = threading.Thread(
+                        target=self.handle_client, 
+                        args=(client_socket, addr),
+                        daemon=True
+                    )
+                    client_handler.start()
+                    self.client_threads.append(client_handler)
                 except socket.timeout:
                     continue
                 except OSError:
                     break  # Socket has been closed
-                print(f"Đã kết nối từ {addr}")
-                client_handler = threading.Thread(target=self.handle_client, args=(client_socket, addr))
-                client_handler.start()
-                self.client_threads.append(client_handler)
         except KeyboardInterrupt:
             print("Đang tắt server...")
             self.shutdown_event.set()
         finally:
-            server_socket.close()
-            # Wait for all client threads to finish
-            for t in self.client_threads:
-                t.join()
+            if self.server_socket:
+                self.server_socket.close()
+
+            # close all client threads
+            for addr in list(self.active_users.keys()):
+                if addr in self.active_users:
+                    del self.active_users[addr]
+            
+            for thread in self.client_threads:
+                thread.join(timeout=2.0)
+
+            print("Server đã tắt")
+
 
     def version_check(self, client_socket):
         version_msg = self.receive_message(client_socket)
