@@ -1,5 +1,4 @@
 # client/gui.py
-# client/gui.py
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
@@ -14,7 +13,6 @@ class LoginWindow:
         self.on_success = on_success
         self.client.set_shutdown_callback(self.handle_server_shutdown)
         self.master.title("Đăng Nhập")
-        self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
         self.center_window(300, 150)  # Trung tâm hóa cửa sổ với kích thước 300x150
 
         self.setup_gui()
@@ -68,6 +66,10 @@ class LoginWindow:
     def attempt_signup(self):
         username = self.username_entry.get()
         password = self.password_entry.get()
+
+        if username == "" or password == "":
+            messagebox.showerror("Lỗi", "Tên người dùng và mật khẩu không được để trống")
+            return
 
         def signup_thread():
             try:
@@ -194,7 +196,10 @@ class FileTransferGUI:
             def upload():
                 try:
                     self.status_var.set("Đang tải lên...")
-                    self.client.upload_file(filepath, self.update_progress)
+                    original_filename = os.path.basename(filepath)
+                    returned_filename = self.client.upload_file(filepath, self.update_progress)
+                    if returned_filename != original_filename:
+                        messagebox.showinfo("Thông báo", f"Tên tệp tin đã được thay đổi thành: {returned_filename}")
                     self.status_var.set("Tải lên thành công")
                     self.refresh_files()
                 except Exception as e:
