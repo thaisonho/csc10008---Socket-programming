@@ -3,6 +3,7 @@ import threading
 import os
 from pathlib import Path
 from users import UserManager
+import requests
 
 class FileTransferServer:
     def __init__(self, host='0.0.0.0', port=5000):
@@ -16,6 +17,10 @@ class FileTransferServer:
         server_socket.bind((self.host, self.port))
         server_socket.listen(5)
         print(f"Server đang chạy trên {self.host}:{self.port}")
+        local_ip = self.get_local_ip()
+        public_ip = self.get_public_ip()
+        print(f"Địa chỉ IP local: {local_ip}")
+        print(f"Địa chỉ IP public: {public_ip}")
         try:
             while True:
                 client_socket, addr = server_socket.accept()
@@ -42,6 +47,15 @@ class FileTransferServer:
             client_socket.close()
             return
 
+    def get_local_ip(self):
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        return local_ip
+
+    def get_public_ip(self):
+        response = requests.get('https://api.ipify.org?format=json')
+        public_ip = response.json()['ip']
+        return public_ip
 
     def handle_client(self, client_socket, address):
         try:
