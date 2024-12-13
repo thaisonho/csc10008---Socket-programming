@@ -1,193 +1,154 @@
-import socket
 import os
 import sys
+import getpass
+from client.transfer import FileTransferClient
+from tqdm import tqdm
 
-HOST = '169.254.5.254'  # Thay bằng địa chỉ IP của server nếu cần
-PORT = 5000  # Thay bằng cổng của server nếu cần
-BUFFER_SIZE = 4096
-PROTOCOL_VERSION = "1.0"
+class ClientCLI:
+    def __init__(self):
+        self.client = FileTransferClient()
+        self.username = None
+        self.is_running = True
 
-def progress_bar(current, total):
-    percent = 100 * current / total
-    print(f"\rTiến độ: {percent:.2f}%", end='')
-
-def send_message(client_socket, message):
-    try:
-        message = f"{message}\n"
-        client_socket.sendall(message.encode())
-    except Exception as e:
-        print(f"Lỗi gửi tin nhắn: {e}")
-        return False
-    return True
-
-def receive_message(client_socket):
-    try:
-        data = ''
-        while not data.endswith('\n'):
-            packet = client_socket.recv(BUFFER_SIZE).decode()
-            if not packet:
-                break
-            data += packet
-        return data.strip()
-    except Exception as e:
-        print(f"Lỗi nhận tin nhắn: {e}")
-        return None
-
-
-def send_file(client_socket, filepath):
-    if not os.path.exists(filepath):
-        print("File không tồn tại.")
-        return
-    filename = os.path.basename(filepath)
-    filesize = os.path.getsize(filepath)
-    try:
-        if not send_message(client_socket, f"UPLOAD {filename}"):
-            return
-        server_response = receive_message(client_socket)
-        if server_response != "FILENAME_OK":
-            print(f"Server từ chối nhận file: {server_response}")
-            return
-
-        if not send_message(client_socket, str(filesize)):
-            return
-        server_response = receive_message(client_socket)
-        if server_response != "READY":
-            print(f"Server không sẵn sàng: {server_response}")
-            return
-
-        with open(filepath, 'rb') as f:
-            bytes_sent = 0
-            while bytes_sent < filesize:
-                data = f.read(BUFFER_SIZE)
-                if not data:
-                    break
-                client_socket.sendall(data)
-                bytes_sent += len(data)
-                progress_bar(bytes_sent, filesize)
-        print("\nUpload hoàn tất.")
-        result = receive_message(client_socket)
-        if result != "SUCCESS":
-            print(f"Lỗi tải lên: {result}")
-        else:
-            print("Tải lên thành công.")
-    except Exception as e:
-        print(f"Lỗi khi upload: {e}")
-
-
-def receive_file(client_socket, filename):
-    try:
-        if not send_message(client_socket, f"DOWNLOAD {filename}"):
-            return
-        server_response = receive_message(client_socket)
-        if server_response == "FILE_NOT_FOUND":
-            print("File không tồn tại trên server.")
-            return
-
+    def connect(self):
         try:
-            filesize = int(server_response)
-        except ValueError:
-            print(f"Kích thước file không hợp lệ: {server_response}")
-            return
+            self.client.connect()
+            print("Đã kết nối tới server thành công!")
+            return True
+        except Exception as e:
+            print(f"Lỗi kết nối: {e}")
+            return False
 
-        if not send_message(client_socket, "READY"):
-            return
-
-        with open(filename, 'wb') as f:
-            bytes_received = 0
-            while bytes_received < filesize:
-                data = client_socket.recv(BUFFER_SIZE)
-                if not data:
-                    break
-                f.write(data)
-                bytes_received += len(data)
-                progress_bar(bytes_received, filesize)
-        print("\nDownload hoàn tất.")
-        result = receive_message(client_socket)
-        if result != "SUCCESS":
-            print(f"Lỗi tải xuống: {result}")
-        else:
-            print("Tải xuống thành công.")
-    except Exception as e:
-        print(f"Lỗi khi download: {e}")
-
-def login(client_socket):
-    username = input("Tên đăng nhập: ").strip()
-    password = input("Mật khẩu: ").strip()
-    if not send_message(client_socket, f"LOGIN|{username}|{password}"):
-        return False
-    response = receive_message(client_socket)
-    if response.startswith("SUCCESS"):
-        print("Đăng nhập thành công.")
-        return True
-    else:
-        print(f"Đăng nhập thất bại: {response}")
-        return False
-
-def signup(client_socket):
-    username = input("Tên đăng ký: ").strip()
-    password = input("Mật khẩu: ").strip()
-    if not send_message(client_socket, f"SIGNUP|{username}|{password}"):
-        return False
-    response = receive_message(client_socket)
-    if response.startswith("SUCCESS"):
-        print("Tạo tài khoản thành công.")
-        return True
-    else:
-        print(f"Đăng ký thất bại: {response}")
-        return False
-
-def version_check(client_socket):
-    if not send_message(client_socket, f"VERSION {PROTOCOL_VERSION}"):
-        return False
-    response = receive_message(client_socket)
-    if response != "VERSION_OK":
-        print(f"Lỗi phiên bản giao thức: {response}")
-        return False
-    return True
-
-def main():
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        client_socket.connect((HOST, PORT))
-    except Exception as e:
-        print(f"Không thể kết nối đến server: {e}")
-        sys.exit()
-    print("Kết nối đến server thành công.")
-
-    try:
-        if not version_check(client_socket):
-            client_socket.close()
-            return
-
-        while True:
-            action = input("Bạn muốn (login/signup)? ").strip().lower()
-            if action == 'login':
-                 if login(client_socket):
-                    break
-            elif action == 'signup':
-                if signup(client_socket):
-                    print("Bạn có thể đăng nhập ngay bây giờ.")
-            else:
-                print("Lựa chọn không hợp lệ. Vui lòng chọn 'login' hoặc 'signup'.")
+    def login(self):
+        attempts = 3
+        while attempts > 0:
+            try:
+                username = input("Tên đăng nhập: ")
+                password = getpass.getpass("Mật khẩu: ")
+                
+                if self.client.login(username, password):
+                    self.username = username
+                    print("Đăng nhập thành công!")
+                    return True
+            except Exception as e:
+                print(f"Lỗi đăng nhập: {e}")
+                attempts -= 1
+                if attempts > 0:
+                    print(f"Còn {attempts} lần thử")
         
-        while True:
-            command = input("Nhập lệnh (upload <file>/download <file>/exit): ").strip()
-            if command.startswith("upload "):
-                filepath = command[7:].strip()
-                send_file(client_socket, filepath)
-            elif command.startswith("download "):
-                filename = command[9:].strip()
-                receive_file(client_socket, filename)
-            elif command == "exit":
-                send_message(client_socket, "EXIT")
-                print("Đóng kết nối.")
+        return False
+
+    def show_help(self):
+        print("\nDanh sách lệnh:")
+        print("  upload <đường dẫn file>  - Tải file lên server")
+        print("  download <tên file>      - Tải file từ server")
+        print("  list                     - Xem danh sách file")
+        print("  help                     - Hiển thị trợ giúp") 
+        print("  exit                     - Thoát chương trình")
+
+    def progress_callback(self, progress):
+        self.progress_bar.update(progress - self.progress_bar.n)
+
+    def upload_file(self, filepath):
+        try:
+            if not os.path.exists(filepath):
+                print(f"Không tìm thấy file: {filepath}")
+                return
+
+            filesize = os.path.getsize(filepath)
+            filename = os.path.basename(filepath)
+
+            print(f"\nĐang tải lên {filename} ({filesize} bytes)")
+            self.progress_bar = tqdm(total=100, desc="Tiến độ")
+            
+            self.client.upload_file(filepath, self.progress_callback)
+            self.progress_bar.close()
+            print("Tải lên thành công!")
+
+        except Exception as e:
+            print(f"Lỗi tải lên: {e}")
+
+    def download_file(self, filename):
+        try:
+            save_path = os.path.join(os.getcwd(), filename)
+            print(f"\nĐang tải xuống {filename}")
+            self.progress_bar = tqdm(total=100, desc="Tiến độ")
+            
+            self.client.download_file(filename, save_path, self.progress_callback)
+            self.progress_bar.close()
+            print(f"Đã tải xuống thành công vào: {save_path}")
+
+        except Exception as e:
+            print(f"Lỗi tải xuống: {e}")
+
+    def list_files(self):
+        try:
+            files = self.client.list_files()
+            if not files:
+                print("Không có file nào")
+                return
+
+            print("\nDanh sách file:")
+            for file_info in files:
+                if "|" in file_info:
+                    name, size = file_info.split("|")
+                    print(f"  {name:<30} {int(size):>10} bytes")
+                else:
+                    print(f"  {file_info}")
+
+        except Exception as e:
+            print(f"Lỗi lấy danh sách file: {e}")
+
+    def handle_server_shutdown(self):
+        print("\nServer đã ngắt kết nối!")
+        self.is_running = False
+
+    def run(self):
+        if not self.connect():
+            return
+
+        self.client.set_shutdown_callback(self.handle_server_shutdown)
+
+        if not self.login():
+            print("Đăng nhập thất bại!")
+            return
+
+        self.show_help()
+
+        while self.is_running:
+            try:
+                command = input("\n> ").strip()
+                
+                if not command:
+                    continue
+
+                parts = command.split()
+                cmd = parts[0].lower()
+
+                if cmd == "exit":
+                    break
+                elif cmd == "chat":
+                    self.chat_mode()
+                elif cmd == "help":
+                    self.show_help()
+                elif cmd == "list":
+                    self.list_files()
+                elif cmd == "upload" and len(parts) > 1:
+                    self.upload_file(parts[1])
+                elif cmd == "download" and len(parts) > 1:
+                    self.download_file(parts[1])
+                else:
+                    print("Lệnh không hợp lệ! Gõ 'help' để xem hướng dẫn")
+
+            except KeyboardInterrupt:
+                print("\nĐang thoát...")
                 break
-            else:
-                print("Lệnh không hợp lệ.")
-    except Exception as e:
-        print(f"Lỗi: {e}")
-    finally:
-        client_socket.close()
+            except Exception as e:
+                print(f"Lỗi: {e}")
+
+        self.client.close()
+        print("Đã ngắt kết nối")
 
 if __name__ == "__main__":
-    main()
+    cli = ClientCLI()
+    cli.run()
