@@ -18,8 +18,30 @@ class ClientCLI:
         except Exception as e:
             print(f"Lỗi kết nối: {e}")
             return False
+    def signup(self):
+        username = input("Nhập tên người dùng: ")
+        if username == "":
+            print("Tên người dùng không được để trống!")
+            return
+        password = getpass.getpass("Nhập mật khẩu: ")
+        if password == "":
+            print("Mật khẩu không được để trống!")
+            return
+        confirm_password = getpass.getpass("Nhập lại mật khẩu: ")
 
+        if password != confirm_password:
+            print("Mật khẩu không khớp!")
+            return
+
+        try:
+            if self.client.signup(username, password):
+                print(f"Đã tạo người dùng '{username}' thành công.")
+            else:
+                print("Người dùng đã tồn tại.")
+        except Exception as e:
+            print(f"Lỗi tạo người dùng: {e}")
     def login(self):
+        # cho phép người dùng chọn đăng nhậpnhập
         attempts = 3
         while attempts > 0:
             try:
@@ -103,15 +125,32 @@ class ClientCLI:
         print("\nServer đã ngắt kết nối!")
         self.is_running = False
 
+    
+
     def run(self):
         if not self.connect():
             return
 
         self.client.set_shutdown_callback(self.handle_server_shutdown)
 
-        if not self.login():
-            print("Đăng nhập thất bại!")
-            return
+        os.system('cls' if os.name == 'nt' else 'clear')
+        
+        while True:
+            print("\nChọn một trong các lựa chọn sau:")
+            print("  1. Đăng ký")
+            print("  2. Đăng nhập")
+            print("  3. Thoát")
+
+            choice = input("> ").strip()
+            if choice == "1":
+                self.signup()
+            elif choice == "2":
+                if self.login():
+                    break
+            elif choice == "3":
+                return
+            else:
+                print("Lựa chọn không hợp lệ!")
 
         self.show_help()
 
