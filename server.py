@@ -240,11 +240,15 @@ class FileTransferServer:
                     username = self.active_users[address]
                     storage_dir = self.user_manager.get_user_storage(username)
                     parts = command.split(' ', 1)
+
                     if len(parts) < 2:
                         self.send_message(client_socket, "ERROR|Định dạng lệnh không hợp lệ")
                         continue
                     filename = parts[1]
                     filepath = os.path.join(storage_dir, filename)
+                    file_path = command.split()[1]
+                    if "../../" in file_path or "..\\" in file_path:
+                        self.send_message(client_socket, "ERROR|Không hợp lệ")
                     if not os.path.exists(filepath):
                         self.send_message(client_socket, "FILE_NOT_FOUND")
                     else:
